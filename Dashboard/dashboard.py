@@ -5,7 +5,7 @@ import seaborn as sns
 
 @st.cache_data
 def load_data():
-    return pd.read_csv('data_all_stations.csv')  
+    return pd.read_csv('Dashboard/data_all_stations.csv')  
 
 data_all_stations = load_data()
 pollutants = ['PM2.5', 'PM10', 'NO2', 'SO2']  
