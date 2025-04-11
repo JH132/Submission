@@ -2,7 +2,9 @@
 
 Dashboard ini menampilkan visualisasi dan analisis kualitas udara berdasarkan data `data_all_stations.csv`.
 
-## Setup Environment 
+## Setup Environment
+
+```bash
 mkdir air_quality_dashboard
 
 cd air_quality_dashboard
@@ -13,5 +15,6 @@ venv\Scripts\activate
 
 pip install -r requirements.txt
 
-## Run Dashboard 
+## Run Dashboard
+```bash
 streamlit run Dashboard/dashboard.py
