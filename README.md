@@ -4,9 +4,13 @@ Dashboard ini menampilkan visualisasi dan analisis kualitas udara berdasarkan da
 
 ## Setup Environment 
 mkdir air_quality_dashboard
+
 cd air_quality_dashboard
+
 python -m venv venv
+
 venv\Scripts\activate     
+
 pip install -r requirements.txt
 
 ## Run Dashboard 
