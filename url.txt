@@ -1,1 +1,1 @@
-https://submission-dashboard-airquality.streamlit.app/
+https://submission-airquality.streamlit.app/
