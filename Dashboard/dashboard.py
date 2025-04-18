@@ -10,7 +10,7 @@ sns.set(style="whitegrid")
 @st.cache_data
 
 def load_data():
-    df = pd.read_csv('data_all_stations.csv')
+    df = pd.read_csv('Dashboard/data_all_stations.csv')
     df['date'] = pd.to_datetime(df['date'])
     return df
 
