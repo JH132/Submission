@@ -3,26 +3,115 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Konfigurasi visualisasi
+sns.set(style="whitegrid")
+
+# Load Data
 @st.cache_data
+
 def load_data():
-    return pd.read_csv('data_all_stations.csv')  
+    df = pd.read_csv('data_all_stations.csv')
+    df['date'] = pd.to_datetime(df['date'])
+    return df
 
-data_all_stations = load_data()
-pollutants = ['PM2.5', 'PM10', 'NO2', 'SO2']  
+data = load_data()
 
+# Sidebar - Filter
+st.sidebar.header("Filter")
+
+# Filter Tahun
+data['year'] = data['date'].dt.year
+unique_years = sorted(data['year'].unique())
+selected_years = st.sidebar.multiselect("Pilih Tahun", unique_years, default=unique_years)
+data = data[data['year'].isin(selected_years)]
+
+# Filter Polutan dan Stasiun
+pollutants = ['PM2.5', 'PM10', 'NO2', 'SO2']
+weather_vars = ['TEMP', 'DEWP', 'PRES', 'WSPM']
+
+selected_pols = st.sidebar.multiselect("Pilih Polutan", pollutants, default=[pollutants[0]])
+stations = data['station'].unique()
+selected_stations = st.sidebar.multiselect("Pilih Stasiun", stations, default=stations)
+
+data = data[data['station'].isin(selected_stations)]
+
+# Visualisasi
 st.title("Dashboard Kualitas Udara di Berbagai Stasiun Beijing")
-st.sidebar.header("Menu")
 
-page = st.sidebar.radio("Pilih Halaman", [
-    "Clustering Kualitas Udara",
-    "Rata-rata Polutan per Stasiun",
-    "Perbandingan Polutan Saat Weekday vs Weekend",
-])
+# Rata-rata Polutan per Stasiun
+st.subheader("\nRata-Rata Polutan di Setiap Stasiun\n")
+if selected_pols:
+    station_avg = data.groupby('station')[selected_pols].mean()
+    fig, ax = plt.subplots(figsize=(12, 6))
+    station_avg.plot(kind='bar', ax=ax)
+    ax.set_title("Rata-rata Polutan per Stasiun")
+    st.pyplot(fig)
 
-if page == "Clustering Kualitas Udara":
-    st.subheader("\nClustering Kualitas Udara\n")
-    station_avg = data_all_stations.groupby('station')['PM2.5'].mean().sort_values(ascending=False)
+# Perbandingan Weekday vs Weekend
+st.subheader("\nPerbandingan Polutan di Setiap Stasiun\n")
+if selected_pols:
+    if 'day_type' in data.columns:
+        weekday_avg = data.groupby(['station', 'day_type'])[selected_pols].mean().reset_index()
+        for pol in selected_pols:
+            fig2, ax2 = plt.subplots(figsize=(14, 6))
+            sns.barplot(data=weekday_avg, x='station', y=pol, hue='day_type', ax=ax2)
+            ax2.set_title(f'Rata-rata {pol} per Stasiun (Weekday vs Weekend)')
+            ax2.set_ylabel(f'{pol} (µg/m³)')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            st.pyplot(fig2)
 
+# Korelasi Heatmap
+st.subheader("\nKorelasi Polutan dan Faktor Cuaca\n")
+corr = data[pollutants + weather_vars].corr()
+fig3, ax3 = plt.subplots(figsize=(10, 8))
+sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', ax=ax3)
+ax3.set_title('Korelasi antara Polutan dan Faktor Cuaca')
+plt.tight_layout()
+st.pyplot(fig3)
+
+# Tren Bulanan PM2.5 di Stasiun Terburuk
+st.subheader("\nTren Bulanan PM2.5 di Stasiun Terburuk\n")
+station_avg_pm25 = data.groupby('station')['PM2.5'].mean().sort_values(ascending=False)
+if not station_avg_pm25.empty:
+    worst_station = station_avg_pm25.index[0]
+    worst_data = data[data['station'] == worst_station].copy()
+    worst_data['month'] = worst_data['date'].dt.month
+    monthly_trend = worst_data.groupby(['year', 'month'])['PM2.5'].mean().reset_index()
+
+    fig4, ax4 = plt.subplots(figsize=(12, 6))
+    sns.lineplot(data=monthly_trend, x='month', y='PM2.5', hue='year', marker='o', ax=ax4)
+    ax4.set_title(f'Tren Bulanan PM2.5 di Stasiun {worst_station}')
+    ax4.set_xlabel('Bulan')
+    ax4.set_ylabel('Rata-rata PM2.5')
+    ax4.grid(True)
+    plt.xticks(range(1, 13))
+    plt.tight_layout()
+    st.pyplot(fig4)
+
+# Scatterplot Regresi: Polutan vs Cuaca
+st.subheader("\nHubungan antara Faktor Cuaca dan Polutan\n")
+for pol in selected_pols:
+    fig5, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig5.suptitle(f'Hubungan antara Faktor Cuaca dan {pol}', fontsize=14)
+    for i, weather in enumerate(['TEMP', 'DEWP', 'WSPM']):
+        sns.regplot(
+            data=data,
+            x=weather, y=pol,
+            ax=axes[i],
+            scatter_kws={'alpha': 0.3},
+            line_kws={'color': 'red'}
+        )
+        axes[i].set_title(f'{weather} vs {pol}')
+        axes[i].set_xlabel(weather)
+        axes[i].set_ylabel(pol)
+        axes[i].grid(True)
+    st.pyplot(fig5)
+
+# Clustering PM2.5
+st.subheader("\nClustering Kualitas Udara Berdasarkan PM2.5 per Stasiun\n")
+if 'PM2.5' in data.columns:
+    cluster_data = data.groupby('station')['PM2.5'].mean().sort_values(ascending=False)
     def categorize_pm25(value):
         if value > 85:
             return 'Tinggi'
@@ -30,105 +119,24 @@ if page == "Clustering Kualitas Udara":
             return 'Sedang'
         else:
             return 'Rendah'
-
-    cluster_labels = station_avg.apply(categorize_pm25)
-
+    
+    cluster_labels = cluster_data.apply(categorize_pm25)
     clustered_df = pd.DataFrame({
-        'Rata-rata PM2.5': station_avg,
+        'Rata-rata PM2.5': cluster_data,
         'Kategori Kualitas Udara': cluster_labels
     }).reset_index()
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig6, ax6 = plt.subplots(figsize=(10, 6))
     sns.barplot(
         data=clustered_df,
         x='Rata-rata PM2.5',
         y='station',
         hue='Kategori Kualitas Udara',
         palette={'Tinggi': 'firebrick', 'Sedang': 'goldenrod', 'Rendah': 'seagreen'},
-        ax=ax
+        ax=ax6
     )
-    ax.set_title('Clustering Kualitas Udara Berdasarkan PM2.5 per Stasiun')
-    ax.set_xlabel('Rata-rata PM2.5 (µg/m³)')
-    ax.set_ylabel('Stasiun')
+    ax6.set_title('Clustering Kualitas Udara Berdasarkan PM2.5 per Stasiun')
+    ax6.set_xlabel('Rata-rata PM2.5 (µg/m³)')
+    ax6.set_ylabel('Stasiun')
     plt.tight_layout()
-
-    st.pyplot(fig)
-
-    st.markdown("""Hasil clustering menunjukkan bahwa Stasiun Dongsi dan Wanshouxigong masuk ke dalam kategori "Tinggi", yang berarti memiliki tingkat polusi udara paling buruk dibandingkan stasiun lainnya. Hal ini terlihat dari tingginya rata-rata konsentrasi PM2.5 di kedua stasiun tersebut. Sementara itu, sepuluh stasiun lainnya dikategorikan dalam kelompok "Sedang", meskipun beberapa di antaranya memiliki nilai yang mendekati ambang batas kategori tinggi.""")
-
-elif page == "Rata-rata Polutan per Stasiun":
-    selected_pol = st.selectbox("Pilih Polutan", pollutants)
-    
-    station_avg = data_all_stations.groupby('station')[pollutants].mean()
-    pol_data = station_avg[selected_pol].sort_values(ascending=False)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    pol_data.plot(kind='bar', color='skyblue', ax=ax)
-    ax.set_title(f'Rata-rata {selected_pol} per Stasiun')
-    ax.set_ylabel(f'{selected_pol} (µg/m³)')
-    ax.set_ylim(0, pol_data.max() * 1.2)
-    ax.grid(axis='y', linestyle='--', alpha=0.5)
-    plt.xticks(rotation=45, ha='right')
-
-    for i, value in enumerate(pol_data):
-        ax.text(i, value + (pol_data.max() * 0.03), f'{value:.1f}',
-                ha='center', fontsize=9)
-
-    st.pyplot(fig)
-
-    st.markdown("""
-    **PM2.5** 
-    - Gucheng memiliki rata-rata PM10 tertinggi (~118.9 µg/m³).
-    - Dingling memiliki rata-rata PM10 terendah (~66.3 µg/m³).
-                
-    **PM10** 
-    - PM2.5 relatif tinggi di Dongsi dan Wanshouxigong.
-    - Paling rendah di Dingling dan Huairou.
-                
-    **NO2** 
-    - Wanliu memiliki NO2 tertinggi (~57.7 µg/m³).
-    - Dingling paling rendah (~27.6 µg/m³).
-                
-    **SO2** 
-    - Konsentrasi SO2 cukup rendah secara keseluruhan.
-    - Tertinggi di Changping (15.0 µg/m³), terendah di Dingling (1.7 µg/m³).
-                
-    **CO** 
-    - CO sangat mendominasi total konsentrasi karena satuan µg/m³ yang besar.
-    - Tertinggi di Wanshouxigong, terendah di Dingling.
-                
-    **O3** 
-    - Dingling memiliki konsentrasi O3 tertinggi (~68.5 µg/m³).
-    - Paling rendah di Shunyi (~43.9 µg/m³).""")
-
-
-# 2. Weekday vs Weekend
-elif page == "Perbandingan Polutan Saat Weekday vs Weekend":
-    selected_pol = st.selectbox("Pilih Polutan", pollutants)
-    weekday_avg = data_all_stations.groupby(['station', 'day_type'])[pollutants].mean().reset_index()
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-    sns.barplot(data=weekday_avg, x='station', y=selected_pol, hue='day_type', ax=ax)
-    ax.set_title(f'Rata-rata {selected_pol} per Stasiun (Weekday vs Weekend)')
-    ax.set_ylabel(f'{selected_pol} (µg/m³)')
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
-
-    for c in ax.containers:
-        ax.bar_label(c, fmt='%.1f', label_type='edge', fontsize=8)
-
-    st.pyplot(fig)
-
-    st.markdown("""
-    - Dongsi Station memiliki rata-rata PM2.5 tertinggi baik saat weekday maupun weekend.
-    - Dingling Station memiliki rata-rata PM2.5 terendah pada kedua jenis hari tersebut.
-    - Gucheng Station menunjukkan rata-rata PM10 tertinggi saat weekday dan weekend.
-    - Dingling Station kembali menjadi stasiun dengan rata-rata PM10 terendah.
-    - Wanliu Station memiliki rata-rata NO2 tertinggi di weekday dan weekend.
-    - Dingling Station mencatatkan rata-rata NO2 terendah di kedua hari.
-    - Saat weekday, stasiun dengan rata-rata SO2 tertinggi adalah Dongsi dan Nongzhanguan Station. Saat weekend, Nongzhanguan Station tetap menjadi yang tertinggi.
-    - Dingling Station konsisten memiliki rata-rata SO2 terendah baik weekday maupun weekend.
-    - Wanshouxigong Station memiliki rata-rata CO tertinggi pada weekday dan weekend.
-    - Dingling Station mencatatkan rata-rata CO terendah di kedua periode.
-    - Dingling Station justru menjadi stasiun dengan rata-rata O3 tertinggi saat weekday dan weekend.
-    - Sebaliknya, Wanliu Station memiliki rata-rata O3 terendah di kedua jenis hari.""")
+    st.pyplot(fig6)
